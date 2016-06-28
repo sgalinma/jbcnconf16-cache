@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <style>
+
+        body {
+            font: 10px sans-serif;
+        }
+
+        .summary {
+            fill: #DEDEDE;
+            font: 15px sans-serif;
+        }
+
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #000;
+            shape-rendering: crispEdges;
+        }
+
+        .bar {
+            fill: steelblue;
+        }
+
+        .line {
+            fill: none;
+            stroke: steelblue;
+            stroke-width: 2px;
+        }
+
+        .border {
+            border-radius: 25px;
+            border: 4px solid #8A87C0;
+            padding: 20px;
+        }
+
+        .grid .tick {
+            stroke: lightgrey;
+            opacity: 0.7;
+        }
+
+        .grid path {
+            stroke-width: 0;
+        }
+    </style>
+
+    <title></title>
+</head>
+<body>
+<div class="border summary"><h1><a name="summary">Performance report summary</a></h1>
+    <div id="summary">Scenario : load test</br>Step 1)</br>someService operation</br></br>Warmup phase over 45 seconds</br>Execution of the scenario : </br>1) over 1 minutes</br></br>Threadpool size : 4</br>Reported results are [ READ ].</br>Report interval = 1000 MILLISECONDS</br></div><br/>
+    <a href="#tps">TPS</a><br/>
+    <a href="#response-time">Response Time</a><br/>
+    <a href="#percentile">Response time percentiles distribution</a><br/>
+</div>
+<br/>
+
+<div class="border"><h1><a name="tps">TPS</a></h1>
+    <div id="tps-box"></div>
+</div>
+<br/>
+
+<div class="border"><h1><a name="response-time">Response time</a></h1>
+    <div id="response-time-box"></div>
+</div>
+<br/>
+
+<div class="border"><h1><a name="gc">Garbage Collection</a></h1>
+    <div id="gc-box"></div>
+</div>
+<br/>
+
+<div class="border"><h1><a name="percentile">Response time percentiles distribution</a></h1>
+    <div id="percentiles-box"></div>
+</div>
+<br/>
+
+<script src="js/jquery-1.11.1.min.js"></script>
+<script src="js/plotly-latest.min.js"></script>
+<script>
+    function addCommas(nStr) {
+        nStr += '';
+        x = nStr.split('.');
+        x1 = x[0];
+        x2 = x.length > 1 ? '.' + x[1] : '';
+        var rgx = /(\d+)(\d{3})/;
+        while (rgx.test(x1)) {
+            x1 = x1.replace(rgx, '$1' + ',' + '$2');
+        }
+        return x1 + x2;
+    }
+
+    function addPercentileGraph(filename, yAxisTitle) {
+        var margin = {top: 20, right: 40, bottom: 50, left: 50},
+                width = 1000 - margin.left - margin.right,
+                height = 550 - margin.top - margin.bottom;
+
+        var x = d3.scale.pow().exponent(5)
+                .range([0, width]);
+
+        var y = d3.scale.linear()
+                .range([height, 0]);
+
+        var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom")
+                .tickFormat(d3.format(".3%"))
+                .tickValues([0.10, 0.50, 0.90, 0.95, 0.99, 0.999, 1.0]);
+
+        var yAxis = d3.svg.axis()
+                .scale(y)
+                .orient("left")
+                .ticks(15);
+
+        var line = d3.svg.line()
+                .x(function (d) { return x(d['Percentile']); })
+                .y(function (d) { return y(d['Value']); });
+
+        var svg = d3.select("#" + filename + " .graph").append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        function make_x_axis(xTickValues) {
+            return d3.svg.axis()
+                    .scale(x)
+                    .orient("bottom")
+                    .tickValues(xTickValues);
+        }
+
+        function make_y_axis(yTickValues) {
+            return d3.svg.axis()
+                    .scale(y)
+                    .orient("left")
+                    .tickValues(yTickValues);
+        }
+
+        function getYTicks(data, xTickValues) {
+            var allYTicks = [];
+            var xTicksRecorded = [];
+            data.reverse().forEach(function (d) {
+                var percent = Math.round(d['Percentile'] * 1000) / 1000;
+                xTickValues.forEach(function (x) {
+                    if (percent == x) {
+                        if (xTicksRecorded.indexOf(x) == -1) {
+                            allYTicks.push(d['Value']);
+                            xTicksRecorded.push(x);
+                        }
+                    }
+                })
+            });
+            return allYTicks;
+        }
+
+        d3.csv(filename + ".csv", function (error, data) {
+
+            var xTickValues = [0.10, 0.50, 0.90, 0.95, 0.99, 0.999, 1.0];
+            var yTickValues = getYTicks(data, xTickValues);
+
+            x.domain(d3.extent(data, function (d) { return d['Percentile']; }));
+            y.domain(d3.extent(data, function (d) { return d['Value']; }));
+
+            svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis)
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-.8em")
+                    .attr("dy", ".15em")
+                    .attr("transform", function (d) {
+                        return "rotate(-65)"
+                    });
+
+            svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                    .append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end")
+                    .text(yAxisTitle);
+
+            svg.append("path")
+                    .datum(data)
+                    .attr("class", "line")
+                    .attr("d", line);
+
+            svg.append("g")
+                    .attr("class", "grid")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(make_x_axis(xTickValues)
+                            .tickSize(-height, 0, 0)
+                            .tickFormat("")
+            );
+
+            svg.append("g")
+                    .attr("class", "grid")
+                    .call(make_y_axis(yTickValues)
+                            .tickSize(-width, 0, 0)
+                            .tickFormat("")
+            );
+        });
+    }
+
+    function addGraph(filename, yAxisTitle) {
+        var margin = {top: 20, right: 55, bottom: 80, left: 80},
+                width = 1000 - margin.left - margin.right,
+                height = 550 - margin.top - margin.bottom;
+
+        var parseDate = d3.time.format("%y-%m-%d %H:%M:%S").parse;
+
+        var x = d3.time.scale()
+                .range([0, width]);
+
+        var y = d3.scale.linear()
+                .range([height, 0]);
+
+        var color = d3.scale.ordinal()
+                .range(["#99AACC", "#CCAACC", "#CCAA99", "#CC5577", "#55CC66", "#4466CC", "#AAAAAA"]);
+
+        var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom")
+                .tickSize(0, 6)
+                .tickFormat(d3.time.format("%H:%M:%S"));
+
+        var yAxis = d3.svg.axis()
+                .scale(y)
+                .orient("left");
+
+        var line = d3.svg.line()
+                .interpolate("basis")
+                .x(function (d) { return x(d.timestamp); })
+                .y(function (d) { return y(d.value); })
+                .defined(function (d) { return !isNaN(d.value); });
+
+
+        var svg = d3.select("#" + filename + " .graph").append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        d3.csv(filename + ".csv", function (error, data) {
+            color.domain(d3.keys(data[0]).filter(function (key) { return key !== "timestamp"; }));
+
+            data.forEach(function (d) {
+                d.timestamp = parseDate(d.timestamp);
+            });
+
+            var series = color.domain().map(function (name) {
+                return {
+                    name: name,
+                    values: data.map(function (d) {
+                        return {timestamp: d.timestamp, value: +d[name]};
+                    })
+                };
+            });
+
+            x.domain(d3.extent(data, function (d) { return d.timestamp; }));
+
+            y.domain([
+                d3.min(series, function (c) { return d3.min(c.values, function (v) { return v.value; }); }),
+                d3.max(series, function (c) { return d3.max(c.values, function (v) { return v.value; }); })
+            ]);
+
+            svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis)
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-.8em")
+                    .attr("dy", ".15em")
+                    .attr("transform", function (d) {
+                        return "rotate(-65)"
+                    });
+
+            svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                    .append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end")
+                    .text(yAxisTitle);
+
+            var serie = svg.selectAll(".serie")
+                    .data(series)
+                    .enter().append("g")
+                    .attr("class", "serie");
+
+            serie.append("path")
+                    .attr("class", "line")
+                    .attr("d", function (d) { return line(d.values); })
+                    .style("stroke", function (d) { return color(d.name); });
+
+            var legend = svg.selectAll(".legend")
+                    .data(color.domain().slice().reverse())
+                    .enter().append("g")
+                    .attr("class", "legend")
+                    .attr("transform", function (d, i) { return "translate(0," + i * 20 + ")"; });
+
+            legend.append("rect")
+                    .attr("x", width - 46)
+                    .attr("width", 18)
+                    .attr("height", 18)
+                    .style("fill", color);
+
+            legend.append("text")
+                    .attr("x", width - 24)
+                    .attr("y", 9)
+                    .attr("dy", ".35em")
+                    .style("text-anchor", "begin")
+                    .text(function (d) { return d; });
+        });
+    }
+
+    function reportTps(filename, title) {
+        $("#tps-box").append("<div id='" + filename + 'tps' + "' style='height: 550px;width: 1200px;'><div class='title'/><div class='graph'/></div>");
+        d3.csv(filename + ".csv", function (data) { processData(data, filename + 'tps', title, 'TPS') });
+
+    }
+
+    function reportResponseTime(filename, title) {
+        $("#response-time-box").append("<div id='" + filename + 'rt' + "' style='height: 550px;width: 1200px;'><div class='title'/><div class='graph'/></div>");
+        d3.csv(filename + ".csv", function (data) { processData(data, filename + 'rt', title, 'Response time (ms)') });
+    }
+
+    function reportGc(filename, title) {
+        $("#gc-box").append("<div id='" + filename + 'gc' + "' style='height: 550px;width: 1200px;'><div class='title'/><div class='graph'/></div>");
+        d3.csv(filename + ".csv", function (data) { processData(data, filename + 'gc', title, 'Pause Time (ms)') });
+    }
+
+    function processData(allRows, filename, title, yTitle) {
+        var colors = ['#D2B48C', '#C491AB', '#808080', '#464646', '#000080', '#084C9E', '#0000CD', '#007FFF', '#008080', '#228B22',
+            '#808000', '#7FFF00', '#DAA520', '#C3B091', '#FF7F50', '#FA8072', '#FC0FC0', '#FF77FF', '#CC8899', '#B57EDC', '#843179', '#4B0082',
+            '#800000', '#DC143C'];
+        var d = [], d2 = [];
+        var colsNames = [];
+        var total = [];
+
+        row = allRows[0];
+        nbCols = -1;
+        $.each(row, function (index, value) {
+            d.push([]);
+            d2.push([]);
+            total.push(0);
+            colsNames.push(index);
+            nbCols++;
+        });
+
+        var nbLines = 1;
+        for (var i = 1; i < allRows.length; i++) {
+            row = allRows[i];
+
+            j = 0;
+            $.each(row, function (index, value) {
+                d[j].push(value);
+
+                // moving average
+                if (j === 0) {
+                    d2[j].push(value);
+                } else {
+                    total[j] = parseInt(total[j]) + parseInt(value);
+                    var avg = parseInt(total[j]) / nbLines;
+                    d2[j].push(avg);
+                }
+                j++;
+            });
+            nbLines++;
+        }
+
+        var data = [];
+        for (var i = 0; i < nbCols; i++) {
+            traces = {
+                type: 'scatter',
+                mode: 'lines',
+                line: {width: '1', color: colors[i % 24]}
+            };
+            traces['x'] = d[0];
+            traces['y'] = d[i + 1];
+            traces['name'] = colsNames[i + 1];
+            data.push(traces);
+
+            avtraces = {
+                type: 'scatter',
+                mode: 'lines',
+                line: {width: '2', color: colors[i % 24], shape: 'spline', dash:2}
+            };
+            avtraces['x'] = d2[0];
+            avtraces['y'] = d2[i + 1];
+            avtraces['name'] = 'Average ' + colsNames[i + 1];
+            data.push(avtraces);
+        }
+
+        var layout = {
+            title: title,
+            xaxis: {title: 'Time', type: 'date'},
+            yaxis: {title: yTitle}
+        };
+
+        Plotly.newPlot(filename, data, layout, {showLink: false});
+    }
+
+    function reportPercentiles(filename, title, mean, max) {
+        $("#percentiles-box").append("<div id='" + filename + 'pct' + "'><div class='title'/><div class='graph'/></div>");
+//        $("#" + filename + 'pct' + " .title").after("Max Response Time = " + (Math.round((max / 1000000) * 1000) / 1000) + " ms<br/>");
+//        $("#" + filename + 'pct' + " .title").after("Mean Response Time = " + (Math.round((mean / 1000000) * 1000) / 1000) + " ms<br/>");
+        d3.csv(filename + ".csv", function (data) { processDataPct(data, filename + 'pct', title, 'Response Time percentiles distribution (ms)') });
+    }
+
+    function processDataPct(allRows, filename, title, yTitle) {
+        var x = [], y = [];
+
+        for (var i = 0; i < allRows.length; i++) {
+            row = allRows[i];
+            x.push(row['Percentile']);
+            y.push(row['Value']);
+        }
+
+        traces = {
+            type: 'scatter',
+            fill: 'tozeroy',
+            x: x,
+            y: y
+        };
+
+        var data = [traces];
+
+        var layout = {
+            xaxis: {
+                type: 'linear',
+                autorange: true,
+                title: 'Time',
+                tickmode: 'auto',
+                nticks: 20
+            },
+            yaxis: {title: yTitle},
+            title: title
+        };
+
+        Plotly.newPlot(filename, data, layout, {showLink: false});
+    }
+
+    $(document).ready(function () {
+reportTps('SomeServiceOperation-tps', 'Periodic TPS - SomeServiceOperation');
+reportTps('total-tps', 'Periodic Total TPS');
+reportResponseTime('SomeServiceOperation-averageLatency', 'Periodic Reponse Time - SomeServiceOperation');
+reportResponseTime('total-averageLatency', 'Periodic Average Response Time of all entities');
+reportGc('gc', 'GC Time');
+
+reportPercentiles('READ-total-percentiles', 'Reponse Time percentiles for READ', '3.331132278825657E8', '1101004799');
+
+    });
+</script>
+</body>
+</html>

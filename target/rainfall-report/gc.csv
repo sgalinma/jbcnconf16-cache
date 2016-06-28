@@ -1,0 +1,2 @@
+timestamp,DURATION,ACTION,CAUSE,NAME
+16-06-16 16:45:49,10,end of minor GC,Allocation Failure,PS Scavenge
